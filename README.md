@@ -1,14 +1,18 @@
 # Cursor2API v2
 
-将 Cursor 文档页免费 AI 对话接口代理转换为 **Anthropic Messages API**，可直接对接 **Claude Code**。
+将 Cursor 文档页免费 AI 对话接口代理转换为 **Anthropic Messages API** 和 **OpenAI Chat Completions API**，可直接对接 **Claude Code**、**ChatBox**、**LobeChat** 等各类客户端。
 
 ## 原理
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌──────────────┐
-│ Claude Code  │────▶│  cursor2api  │────▶│  Cursor API  │
-│ (Anthropic   │     │  (代理+转换)  │     │  /api/chat   │
-│  Messages)   │◀────│              │◀────│              │
+│ Claude Code  │────▶│              │────▶│              │
+│ (Anthropic)  │     │              │     │              │
+│              │◀────│              │◀────│              │
+├─────────────┤     │  cursor2api  │     │  Cursor API  │
+│ ChatBox 等   │────▶│  (代理+转换)  │     │  /api/chat   │
+│ (OpenAI)     │     │              │     │              │
+│              │◀────│              │◀────│              │
 └─────────────┘     └──────────────┘     └──────────────┘
 ```
 
@@ -22,6 +26,7 @@
 ## 核心特性
 
 - **Anthropic Messages API 完整兼容** - `/v1/messages` 流式/非流式
+- **OpenAI Chat Completions API 兼容** - `/v1/chat/completions` 流式/非流式 + 工具调用
 - **提示词注入工具能力** - 让 Claude Code 的 Bash、Read、Write 等工具全部可用
 - **Node.js/TypeScript** - 无需外部进程生成 x-is-human token
 - **Chrome TLS 指纹** - 模拟真实浏览器请求头
@@ -62,19 +67,28 @@ export ANTHROPIC_BASE_URL=http://localhost:3010
 claude
 ```
 
+### 6. 配合 OpenAI 兼容客户端（ChatBox、LobeChat 等）
+
+在客户端设置中填入：
+- **API Base URL**: `http://localhost:3010/v1`
+- **API Key**: 任意值（如 `sk-xxx`，不做校验）
+- **Model**: 任意值（实际使用 config.yaml 中配置的模型）
+
 ## 项目结构
 
 ```
 cursor2api/
 ├── src/
-│   ├── index.ts          # 入口 + Express 服务
-│   ├── config.ts         # 配置管理
-│   ├── types.ts          # 类型定义
-│   ├── cursor-client.ts  # Cursor API 客户端 + Token 生成
-│   ├── converter.ts      # 协议转换 + 工具提示词注入
-│   └── handler.ts        # Anthropic API 处理器
-├── jscode/               # x-is-human token 生成脚本
-├── config.yaml           # 配置文件
+│   ├── index.ts            # 入口 + Express 服务
+│   ├── config.ts           # 配置管理
+│   ├── types.ts            # Anthropic/Cursor 类型定义
+│   ├── openai-types.ts     # OpenAI 类型定义
+│   ├── cursor-client.ts    # Cursor API 客户端 + Token 生成
+│   ├── converter.ts        # 协议转换 + 工具提示词注入
+│   ├── handler.ts          # Anthropic API 处理器
+│   └── openai-handler.ts   # OpenAI API 处理器
+├── jscode/                 # x-is-human token 生成脚本
+├── config.yaml             # 配置文件
 ├── package.json
 └── tsconfig.json
 ```
