@@ -6,10 +6,16 @@
  */
 
 import 'dotenv/config';
+import { createRequire } from 'module';
 import express from 'express';
 import { getConfig } from './config.js';
 import { handleMessages, listModels, countTokens } from './handler.js';
 import { handleOpenAIChatCompletions } from './openai-handler.js';
+
+// 从 package.json 读取版本号，统一来源，避免多处硬编码
+const require = createRequire(import.meta.url);
+const { version: VERSION } = require('../package.json') as { version: string };
+
 
 const app = express();
 const config = getConfig();
@@ -48,14 +54,14 @@ app.get('/v1/models', listModels);
 
 // 健康检查
 app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', version: '2.4.0' });
+    res.json({ status: 'ok', version: VERSION });
 });
 
 // 根路径
 app.get('/', (_req, res) => {
     res.json({
         name: 'cursor2api',
-        version: '2.4.0',
+        version: VERSION,
         description: 'Cursor Docs AI → Anthropic & OpenAI API Proxy',
         endpoints: {
             anthropic_messages: 'POST /v1/messages',
@@ -75,7 +81,7 @@ app.get('/', (_req, res) => {
 app.listen(config.port, () => {
     console.log('');
     console.log('  ╔══════════════════════════════════════╗');
-    console.log('  ║        Cursor2API v2.4.0             ║');
+    console.log(`  ║        Cursor2API v${VERSION.padEnd(21)}║`);
     console.log('  ╠══════════════════════════════════════╣');
     console.log(`  ║  Server:  http://localhost:${config.port}      ║`);
     console.log('  ║  Model:   ' + config.cursorModel.padEnd(26) + '║');
