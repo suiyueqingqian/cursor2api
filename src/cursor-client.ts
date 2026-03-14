@@ -103,7 +103,7 @@ async function sendCursorRequestInner(
             body: JSON.stringify(req),
             signal: controller.signal,
             ...getProxyFetchOptions(),
-        } as any);
+        } as RequestInit);
 
         if (!resp.ok) {
             const body = await resp.text();

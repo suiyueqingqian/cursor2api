@@ -45,6 +45,11 @@ export async function applyVisionInterceptor(messages: AnthropicMessage[]): Prom
         }
 
         if (hasImages && imagesToAnalyze.length > 0) {
+            // ★ 预处理：将 URL 类型图片下载转为 base64
+            // OpenClaw/Telegram 等客户端发送的图片 URL 通常是临时链接，
+            // vision API 和 OCR 无法直接访问，需要先下载到本地
+            await convertUrlImagesToBase64(imagesToAnalyze);
+
             try {
                 let descriptions = '';
                 if (config.vision.mode === 'ocr') {
@@ -64,12 +69,57 @@ export async function applyVisionInterceptor(messages: AnthropicMessage[]): Prom
                 msg.content = newContent;
             } catch (e) {
                 console.error("[Vision API Error]", e);
+                const errMsg = e instanceof Error ? e.message : String(e);
                 newContent.push({
                     type: 'text',
-                    text: `\n\n[System: The user attached image(s), but the Vision interceptor failed to process them. Error: ${(e as Error).message}]\n\n`
+                    text: `\n\n[System: The user attached image(s), but the Vision interceptor failed to process them. Error: ${errMsg}]\n\n`
                 });
                 msg.content = newContent;
             }
+        }
+    }
+}
+
+/**
+ * 将 URL 类型的图片下载并转换为 base64
+ * 解决 Telegram/OpenClaw 等客户端发送的临时 URL 无法被 vision API/OCR 直接访问的问题
+ * 转换后修改原 block 的 source 为 base64 格式（in-place）
+ */
+async function convertUrlImagesToBase64(imageBlocks: AnthropicContentBlock[]): Promise<void> {
+    for (let i = 0; i < imageBlocks.length; i++) {
+        const img = imageBlocks[i];
+        if (img.type !== 'image' || !img.source || img.source.type !== 'url') continue;
+
+        const url = img.source.data;
+        if (!url || url.startsWith('data:')) continue;
+
+        try {
+            console.log(`[Vision] 下载 URL 图片 ${i + 1}: ${url.substring(0, 80)}...`);
+            const response = await fetch(url, {
+                ...getProxyFetchOptions(),
+                signal: AbortSignal.timeout(30000), // 30s timeout
+            } as RequestInit);
+
+            if (!response.ok) {
+                console.warn(`[Vision] URL 图片 ${i + 1} 下载失败 (HTTP ${response.status})，保留原始 URL`);
+                continue;
+            }
+
+            const contentType = response.headers.get('content-type') || 'image/jpeg';
+            const mediaType = contentType.split(';')[0].trim();
+            const arrayBuffer = await response.arrayBuffer();
+            const base64Data = Buffer.from(arrayBuffer).toString('base64');
+
+            // In-place 替换为 base64 格式
+            img.source = {
+                type: 'base64',
+                media_type: mediaType,
+                data: base64Data,
+            };
+            console.log(`[Vision] ✅ URL 图片 ${i + 1} 已转换为 base64 (${Math.round(base64Data.length / 1024)}KB, ${mediaType})`);
+        } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            console.warn(`[Vision] URL 图片 ${i + 1} 下载异常: ${errMsg}，保留原始 URL`);
         }
     }
 }
@@ -94,7 +144,7 @@ async function processWithAPIFallback(imagesToAnalyze: AnthropicContentBlock[]):
                 console.log(`[Vision] ✅ ${providerLabel} 处理成功`);
                 return result;
             } catch (err) {
-                const errMsg = (err as Error).message;
+                const errMsg = err instanceof Error ? err.message : String(err);
                 console.warn(`[Vision] ❌ ${providerLabel} 失败: ${errMsg}`);
                 errors.push(`${providerLabel}: ${errMsg}`);
                 // Continue to next provider
@@ -113,7 +163,7 @@ async function processWithAPIFallback(imagesToAnalyze: AnthropicContentBlock[]):
             const result = await callVisionAPIWithProvider(imagesToAnalyze, legacyProvider);
             return result;
         } catch (err) {
-            const errMsg = (err as Error).message;
+            const errMsg = err instanceof Error ? err.message : String(err);
             console.warn(`[Vision] ❌ API 调用失败: ${errMsg}`);
             errors.push(`default: ${errMsg}`);
         }
@@ -127,7 +177,7 @@ async function processWithAPIFallback(imagesToAnalyze: AnthropicContentBlock[]):
         } catch (ocrErr) {
             throw new Error(
                 `All ${errors.length} API provider(s) failed AND local OCR fallback also failed. ` +
-                `API errors: [${errors.join(' | ')}]. OCR error: ${(ocrErr as Error).message}`
+                `API errors: [${errors.join(' | ')}]. OCR error: ${ocrErr instanceof Error ? ocrErr.message : String(ocrErr)}`
             );
         }
     }
@@ -237,15 +287,16 @@ async function callVisionAPIWithProvider(imageBlocks: AnthropicContentBlock[], p
                 },
                 body: JSON.stringify(payload),
                 ...getProxyFetchOptions(),
-            } as any);
+            } as RequestInit);
 
             if (!res.ok) {
                 const errBody = await res.text();
                 throw new Error(`API returned status ${res.status}: ${errBody}`);
             }
 
-            const data = await res.json() as any;
-            const description = data.choices?.[0]?.message?.content || 'No description returned.';
+            const data = await res.json() as Record<string, unknown>;
+            const choices = data.choices as Array<{ message?: { content?: string } }> | undefined;
+            const description = choices?.[0]?.message?.content || 'No description returned.';
             
             setCache(hash, description);
             combinedText += `--- Image ${i + 1} Description ---\n${description}\n\n`;

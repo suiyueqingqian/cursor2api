@@ -36,6 +36,12 @@ export function extractThinking(text: string): ExtractThinkingResult {
         return { thinkingBlocks, cleanText: text };
     }
 
+    // ★ 预处理：清除模型有时在 thinking 标签周围包裹的反引号
+    // 常见模式：`<thinking>...</thinking>` 或 ```<thinking>...</thinking>```
+    // 这些反引号会在 thinking 提取后残留为孤立反引号，导致正文被截断/格式错乱
+    text = text.replace(/`{1,3}\s*<thinking>/g, '<thinking>');
+    text = text.replace(/<\/thinking>\s*`{1,3}/g, '</thinking>');
+
     // 使用全局正则匹配所有 <thinking>...</thinking> 块
     // dotAll flag (s) 让 . 匹配换行符
     const thinkingRegex = /<thinking>([\s\S]*?)<\/thinking>/g;
@@ -43,7 +49,9 @@ export function extractThinking(text: string): ExtractThinkingResult {
     const ranges: Array<{ start: number; end: number }> = [];
 
     while ((match = thinkingRegex.exec(text)) !== null) {
-        const thinkingContent = match[1].trim();
+        // 清除 thinking 内容首尾的反引号（模型有时在内容内也加反引号）
+        let thinkingContent = match[1].trim();
+        thinkingContent = thinkingContent.replace(/^`{1,3}\s*/, '').replace(/\s*`{1,3}$/, '');
         if (thinkingContent) {
             thinkingBlocks.push({ thinking: thinkingContent });
         }
@@ -56,7 +64,8 @@ export function extractThinking(text: string): ExtractThinkingResult {
     const lastCloseIdx = text.lastIndexOf('</thinking>');
     if (lastOpenIdx >= 0 && (lastCloseIdx < 0 || lastOpenIdx > lastCloseIdx)) {
         // 未闭合的 thinking 块 — 提取剩余内容
-        const unclosedContent = text.substring(lastOpenIdx + '<thinking>'.length).trim();
+        let unclosedContent = text.substring(lastOpenIdx + '<thinking>'.length).trim();
+        unclosedContent = unclosedContent.replace(/^`{1,3}\s*/, '').replace(/\s*`{1,3}$/, '');
         if (unclosedContent) {
             thinkingBlocks.push({ thinking: unclosedContent });
         }
@@ -74,6 +83,18 @@ export function extractThinking(text: string): ExtractThinkingResult {
     // 清理多余空行（thinking 块移除后可能留下连续空行）
     cleanText = cleanText.replace(/\n{3,}/g, '\n\n').trim();
 
+    // ★ 后处理：清除 thinking 提取后残留的孤立反引号
+    // 场景：模型输出 `<thinking>...</thinking>\n正文内容`
+    // 预处理已清除标签周围的反引号，但如果反引号和标签不相邻（如尾部反引号），
+    // 提取后 cleanText 可能变成 "正文内容`"，需要清理
+    // 只清理首尾的孤立反引号行或孤立反引号字符
+    cleanText = cleanText.replace(/^`{1,3}\s*\n/, '').replace(/\n\s*`{1,3}$/, '');
+    // 处理 cleanText 整体被一对反引号包裹的情况（如 `正文内容`）
+    if (/^`[^`]/.test(cleanText) && /[^`]`$/.test(cleanText) && (cleanText.match(/`/g) || []).length === 2) {
+        cleanText = cleanText.substring(1, cleanText.length - 1);
+    }
+    cleanText = cleanText.trim();
+
     if (thinkingBlocks.length > 0) {
         console.log(`[Thinking] 提取到 ${thinkingBlocks.length} 个 thinking 块, 总 ${thinkingBlocks.reduce((s, b) => s + b.thinking.length, 0)} chars`);
     }
@@ -86,4 +107,4 @@ export function extractThinking(text: string): ExtractThinkingResult {
  *
  * 与 cursor2api-go 的 thinkingHint 保持一致
  */
-export const THINKING_HINT = `You may use <thinking>...</thinking> for brief private reasoning. HARD LIMITS: max 3 lines, max 120 words. Do NOT write code, full solutions, or long analysis inside thinking. Never repeat thinking content in the final response.`;
+export const THINKING_HINT = `When needed, you may think step-by-step inside <thinking>...</thinking> tags (keep under 3 lines).`;
