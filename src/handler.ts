@@ -673,6 +673,44 @@ async function handleStream(res: Response, cursorReq: CursorChatRequest, body: A
             const extracted = extractThinking(fullResponse);
             thinkingBlocks = extracted.thinkingBlocks;
             fullResponse = extracted.cleanText;
+
+            // ★ Thinking 占比过高检测：如果 thinking 内容远超实际内容，说明 thinking 吃掉了 output 预算
+            // 此时丢弃 thinking 并用禁止 thinking 的方式重新请求，把预算留给实际内容
+            const thinkingChars = thinkingBlocks.reduce((s, b) => s + b.thinking.length, 0);
+            if (hasTools && isTruncated(fullResponse) && thinkingChars > fullResponse.length * 2) {
+                console.log(`[Handler] ⚠️ Thinking 占比过高 (thinking=${thinkingChars}, content=${fullResponse.length})，禁用 thinking 重试...`);
+                thinkingBlocks = []; // 丢弃 thinking（已经不够完整了）
+
+                // 在最后一条 user 消息末尾追加禁止 thinking 指令
+                const retryMessages = [...activeCursorReq.messages];
+                let lastUserIdx = -1;
+                for (let i = retryMessages.length - 1; i >= 0; i--) {
+                    if (retryMessages[i].role === 'user') { lastUserIdx = i; break; }
+                }
+                if (lastUserIdx >= 0) {
+                    const lastMsg = retryMessages[lastUserIdx];
+                    const lastText = lastMsg.parts.map(p => p.text || '').join('');
+                    retryMessages[lastUserIdx] = {
+                        ...lastMsg,
+                        parts: [{ type: 'text', text: lastText + '\n\nDo NOT use <thinking> tags. Output the action block directly.' }],
+                    };
+                }
+
+                fullResponse = '';
+                await sendCursorRequest({ ...activeCursorReq, messages: retryMessages }, (event: CursorSSEEvent) => {
+                    if (event.type === 'text-delta' && event.delta) {
+                        fullResponse += event.delta;
+                    }
+                });
+                console.log(`[Handler] 禁用 thinking 重试响应 (${fullResponse.length} chars): ${fullResponse.substring(0, 200)}${fullResponse.length > 200 ? '...' : ''}`);
+
+                // 重试响应也可能有 thinking（模型不听话），再提取一次
+                if (fullResponse.includes('<thinking>')) {
+                    const re = extractThinking(fullResponse);
+                    thinkingBlocks = re.thinkingBlocks;
+                    fullResponse = re.cleanText;
+                }
+            }
         }
 
         // 流完成后，处理完整响应
@@ -692,8 +730,8 @@ async function handleStream(res: Response, cursorReq: CursorChatRequest, body: A
                 console.log(`[Handler] ⚠️ 检测到截断 (${fullResponse.length} chars)，执行 Tier ${truncationTier} 策略${isFirstTier ? '（Bash/拆分引导）' : '（强制拆分）'}...`);
 
                 const tierPrompt = isFirstTier
-                    ? `Output truncated (${fullResponse.length} chars). Split into smaller parts: use multiple Write calls (≤150 lines each) or Bash append (\`cat >> file << 'EOF'\`). Start with the first chunk now.`
-                    : `Still truncated (${fullResponse.length} chars). Use ≤80 lines per action block. Start first chunk now.`;
+                    ? `Output truncated (${fullResponse.length} chars). Do NOT use <thinking> tags. Split into smaller parts: use multiple Write calls (≤150 lines each) or Bash append (\`cat >> file << 'EOF'\`). Start with the first chunk now.`
+                    : `Still truncated (${fullResponse.length} chars). Do NOT use <thinking> tags. Use ≤80 lines per action block. Start first chunk now.`;
 
                 // 丢弃截断的响应，让模型重新用拆分策略生成
                 activeCursorReq = {
@@ -753,7 +791,7 @@ async function handleStream(res: Response, cursorReq: CursorChatRequest, body: A
                 const anchorLength = Math.min(300, fullResponse.length);
                 const anchorText = fullResponse.slice(-anchorLength);
 
-                const continuationPrompt = `Output cut off. Last part:\n\`\`\`\n...${anchorText}\n\`\`\`\nContinue exactly from the cut-off point. No repeats.`;
+                const continuationPrompt = `Output cut off. Last part:\n\`\`\`\n...${anchorText}\n\`\`\`\nContinue exactly from the cut-off point. No repeats. Do NOT use <thinking> tags.`;
 
                 activeCursorReq = {
                     ...activeCursorReq,

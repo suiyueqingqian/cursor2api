@@ -184,6 +184,11 @@ AI 按此格式输出 → 我们解析并转换为标准的 Anthropic `tool_use`
 - 解决 Telegram/OpenClaw 发送的临时 URL 无法被 vision API / OCR 直接访问的问题
 - 30s 超时，支持代理，下载失败时保留原始 URL 兜底
 
+**⚡ Thinking 占比过高自动重试**
+- 检测 thinking 内容占比超过实际内容 2 倍且导致截断时，自动丢弃 thinking 并禁用 thinking 重新请求
+- Tier 1/2/续写 prompt 中追加 "Do NOT use \<thinking\> tags"，防止续写时 thinking 吃掉 output 预算
+- 解决 thinking ~1500 chars + 实际内容 ~300 chars 导致工具调用反复截断的问题
+
 ### v2.6.0 (2026-03-13) — Thinking 支持 + 阶梯式截断恢复 + 提示词精简 + 反拒绝策略升级
 
 **🧠 Thinking 功能集成**
