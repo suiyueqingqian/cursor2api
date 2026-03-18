@@ -12,6 +12,8 @@ export function getConfig(): AppConfig {
         port: 3010,
         timeout: 120,
         cursorModel: 'anthropic/claude-sonnet-4.6',
+        maxAutoContinue: 3,
+        maxHistoryMessages: 100,
         fingerprint: {
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
         },
@@ -26,6 +28,8 @@ export function getConfig(): AppConfig {
             if (yaml.timeout) config.timeout = yaml.timeout;
             if (yaml.proxy) config.proxy = yaml.proxy;
             if (yaml.cursor_model) config.cursorModel = yaml.cursor_model;
+            if (typeof yaml.max_auto_continue === 'number') config.maxAutoContinue = yaml.max_auto_continue;
+            if (typeof yaml.max_history_messages === 'number') config.maxHistoryMessages = yaml.max_history_messages;
             if (yaml.fingerprint) {
                 if (yaml.fingerprint.user_agent) config.fingerprint.userAgent = yaml.fingerprint.user_agent;
             }
@@ -90,6 +94,8 @@ export function getConfig(): AppConfig {
     if (process.env.TIMEOUT) config.timeout = parseInt(process.env.TIMEOUT);
     if (process.env.PROXY) config.proxy = process.env.PROXY;
     if (process.env.CURSOR_MODEL) config.cursorModel = process.env.CURSOR_MODEL;
+    if (process.env.MAX_AUTO_CONTINUE !== undefined) config.maxAutoContinue = parseInt(process.env.MAX_AUTO_CONTINUE);
+    if (process.env.MAX_HISTORY_MESSAGES !== undefined) config.maxHistoryMessages = parseInt(process.env.MAX_HISTORY_MESSAGES);
     if (process.env.AUTH_TOKEN) {
         config.authTokens = process.env.AUTH_TOKEN.split(',').map(s => s.trim()).filter(Boolean);
     }

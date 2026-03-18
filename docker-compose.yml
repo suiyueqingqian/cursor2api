@@ -36,6 +36,10 @@ services:
       # - COMPRESSION_ENABLED=true
       # - COMPRESSION_LEVEL=2
 
+      # ── 自动续写 & 历史消息限制 ──
+      # - MAX_AUTO_CONTINUE=3          # 截断后自动续写次数，0=禁用
+      # - MAX_HISTORY_MESSAGES=100     # 历史消息条数上限，-1=不限制
+
       # ── 日志持久化 ──
       # - LOG_FILE_ENABLED=true
       # - LOG_DIR=./logs

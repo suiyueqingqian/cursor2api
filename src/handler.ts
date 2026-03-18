@@ -693,12 +693,12 @@ export async function autoContinueCursorToolResponseStream(
     hasTools: boolean,
 ): Promise<string> {
     let fullResponse = initialResponse;
-    const MAX_AUTO_CONTINUE = 3;
+    const MAX_AUTO_CONTINUE = getConfig().maxAutoContinue;
     let continueCount = 0;
     let consecutiveSmallAdds = 0;
     const originalMessages = [...cursorReq.messages];
 
-    while (shouldAutoContinueTruncatedToolResponse(fullResponse, hasTools) && continueCount < MAX_AUTO_CONTINUE) {
+    while (MAX_AUTO_CONTINUE > 0 && shouldAutoContinueTruncatedToolResponse(fullResponse, hasTools) && continueCount < MAX_AUTO_CONTINUE) {
         continueCount++;
 
         const anchorLength = Math.min(300, fullResponse.length);
@@ -760,12 +760,12 @@ export async function autoContinueCursorToolResponseFull(
     hasTools: boolean,
 ): Promise<string> {
     let fullText = initialText;
-    const MAX_AUTO_CONTINUE = 3;
+    const MAX_AUTO_CONTINUE = getConfig().maxAutoContinue;
     let continueCount = 0;
     let consecutiveSmallAdds = 0;
     const originalMessages = [...cursorReq.messages];
 
-    while (shouldAutoContinueTruncatedToolResponse(fullText, hasTools) && continueCount < MAX_AUTO_CONTINUE) {
+    while (MAX_AUTO_CONTINUE > 0 && shouldAutoContinueTruncatedToolResponse(fullText, hasTools) && continueCount < MAX_AUTO_CONTINUE) {
         continueCount++;
 
         const anchorLength = Math.min(300, fullText.length);
@@ -1279,14 +1279,14 @@ async function handleStream(res: Response, cursorReq: CursorChatRequest, body: A
         // 流完成后，处理完整响应
         // ★ 内部截断续写：如果模型输出过长被截断（常见于写大文件），Proxy 内部分段续写，然后拼接成完整响应
         // 这样可以确保工具调用（如 Write）不会横跨两次 API 响应而退化为纯文本
-        const MAX_AUTO_CONTINUE = 3;
+        const MAX_AUTO_CONTINUE = getConfig().maxAutoContinue;
         let continueCount = 0;
         let consecutiveSmallAdds = 0; // 连续小增量计数
         
         // 保存原始请求的消息快照（不含续写追加的消息）
         const originalMessages = [...activeCursorReq.messages];
         
-        while (shouldAutoContinueTruncatedToolResponse(fullResponse, hasTools) && continueCount < MAX_AUTO_CONTINUE) {
+        while (MAX_AUTO_CONTINUE > 0 && shouldAutoContinueTruncatedToolResponse(fullResponse, hasTools) && continueCount < MAX_AUTO_CONTINUE) {
             continueCount++;
             const prevLength = fullResponse.length;
             log.warn('Handler', 'continuation', `内部检测到截断 (${fullResponse.length} chars)，隐式续写 (第${continueCount}次)`);
@@ -1671,12 +1671,12 @@ async function handleNonStream(res: Response, cursorReq: CursorChatRequest, body
     // ★ 内部截断续写（与流式路径对齐）
     // Claude CLI 使用非流式模式时，写大文件最容易被截断
     // 在 proxy 内部完成续写，确保工具调用参数完整
-    const MAX_AUTO_CONTINUE = 3;
+    const MAX_AUTO_CONTINUE = getConfig().maxAutoContinue;
     let continueCount = 0;
     let consecutiveSmallAdds = 0; // 连续小增量计数
     const originalMessages = [...activeCursorReq.messages];
 
-    while (shouldAutoContinueTruncatedToolResponse(fullText, hasTools) && continueCount < MAX_AUTO_CONTINUE) {
+    while (MAX_AUTO_CONTINUE > 0 && shouldAutoContinueTruncatedToolResponse(fullText, hasTools) && continueCount < MAX_AUTO_CONTINUE) {
         continueCount++;
         const prevLength = fullText.length;
         log.warn('Handler', 'continuation', `非流式检测到截断 (${fullText.length} chars)，隐式续写 (第${continueCount}次)`);

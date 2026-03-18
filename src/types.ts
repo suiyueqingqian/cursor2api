@@ -106,6 +106,8 @@ export interface AppConfig {
     proxy?: string;
     cursorModel: string;
     authTokens?: string[];  // API 鉴权 token 列表，为空则不鉴权
+    maxAutoContinue: number;        // 自动续写最大次数，默认 3，设 0 禁用
+    maxHistoryMessages: number;     // 历史消息条数硬限制，默认 100，-1 不限制
     vision?: {
         enabled: boolean;
         mode: 'ocr' | 'api';

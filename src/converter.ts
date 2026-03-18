@@ -399,6 +399,19 @@ export async function convertToCursorRequest(req: AnthropicRequest): Promise<Cur
         }
     }
 
+    // ★ 历史消息条数硬限制
+    // 超出 max_history_messages 时，删除最早的消息（保留 few-shot 示例）
+    const maxHistoryMessages = config.maxHistoryMessages;
+    if (maxHistoryMessages >= 0) {
+        const fewShotOffset = hasTools ? 2 : 0; // 工具模式有2条 few-shot 消息需跳过
+        const userMessages = messages.length - fewShotOffset;
+        if (userMessages > maxHistoryMessages) {
+            const toRemove = userMessages - maxHistoryMessages;
+            messages.splice(fewShotOffset, toRemove);
+            console.log(`[Converter] 历史消息裁剪: ${userMessages} → ${maxHistoryMessages} 条 (移除了最早的 ${toRemove} 条)`);
+        }
+    }
+
     // ★ 渐进式历史压缩（智能压缩，不破坏结构）
     // 可通过 config.yaml 的 compression 配置控制开关和级别
     // 策略：保留最近 KEEP_RECENT 条消息完整，对早期消息进行结构感知压缩
