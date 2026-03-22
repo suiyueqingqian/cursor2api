@@ -492,14 +492,36 @@ function toolCallNeedsMoreContinuation(toolCall: ParsedToolCall): boolean {
  */
 export function shouldAutoContinueTruncatedToolResponse(text: string, hasTools: boolean): boolean {
     if (!hasTools || !isTruncated(text)) return false;
+    // ★ json action 块未闭合是最精确的截断信号，不受长度限制影响
+    // isTruncated 在有 json action 块时 early return：全闭合→false，未闭合→true
+    // 所以此处 isTruncated=true 且有开标签，必然意味着 action 块未闭合，无需重复计数
+    const hasUnclosedActionBlock = (text.match(/```json\s+action/g) || []).length > 0;
     // 响应过短（< 200 chars）时不触发续写：上下文不足会导致模型拒绝或错误续写
-    if (text.trim().length < 200) return false;
+    // 例外：json action 块明确未闭合时跳过此检查（thinking 剥离后正文可能很短）
+    if (!hasUnclosedActionBlock && text.trim().length < 200) return false;
     if (!hasToolCalls(text)) return true;
 
     const { toolCalls } = parseToolCalls(text);
     if (toolCalls.length === 0) return true;
 
     return toolCalls.some(toolCallNeedsMoreContinuation);
+}
+
+// ==================== 续写辅助 ====================
+
+/**
+ * 为续写请求修复未闭合的 <thinking> 标签。
+ *
+ * 当 thinking 内容超出模型单次输出上限时，rawResponse 末尾是未闭合的
+ * <thinking>...partial 内容。把它作为 assistant context 发给模型时，
+ * 模型会把这段当成 thinking 继续输出，而不是续写正文。
+ * 在此统一补全 </thinking>，让模型知道思考阶段已结束，应续写正文。
+ */
+function closeUnclosedThinking(text: string): string {
+    const opens = (text.match(/<thinking>/g) || []).length;
+    const closes = (text.match(/<\/thinking>/g) || []).length;
+    if (opens > closes) return text + '</thinking>\n';
+    return text;
 }
 
 // ==================== 续写去重 ====================
@@ -599,9 +621,11 @@ export async function autoContinueCursorToolResponseStream(
 
 Continue EXACTLY from where you stopped. DO NOT repeat any content already generated. DO NOT restart the response. Output ONLY the remaining content, starting immediately from the cut-off point.`;
 
-        const assistantContext = fullResponse.length > 2000
-            ? '...\n' + fullResponse.slice(-2000)
-            : fullResponse;
+        const assistantContext = closeUnclosedThinking(
+            fullResponse.length > 2000
+                ? '...\n' + fullResponse.slice(-2000)
+                : fullResponse,
+        );
 
         const continuationReq: CursorChatRequest = {
             ...cursorReq,
@@ -671,9 +695,11 @@ export async function autoContinueCursorToolResponseFull(
 
 Continue EXACTLY from where you stopped. DO NOT repeat any content already generated. DO NOT restart the response. Output ONLY the remaining content, starting immediately from the cut-off point.`;
 
-        const assistantContext = fullText.length > 2000
-            ? '...\n' + fullText.slice(-2000)
-            : fullText;
+        const assistantContext = closeUnclosedThinking(
+            fullText.length > 2000
+                ? '...\n' + fullText.slice(-2000)
+                : fullText,
+        );
 
         const continuationReq: CursorChatRequest = {
             ...cursorReq,
@@ -917,6 +943,11 @@ async function handleDirectTextStream(
             if (split.startedWithThinking && split.complete) {
                 thinkingContent = split.thinkingContent;
                 flushVisible(split.remainder);
+            } else if (split.startedWithThinking && !split.complete) {
+                // ★ thinking 未闭合（输出被截断在 thinking 阶段）
+                // 提取已积累的部分 thinking 内容，正文为空，避免 <thinking>...内容泄漏到正文
+                thinkingContent = split.thinkingContent;
+                // remainder 为空，不 flush 任何正文内容
             } else {
                 flushVisible(leadingBuffer);
             }
@@ -1225,6 +1256,11 @@ async function handleStream(res: Response, cursorReq: CursorChatRequest, body: A
             if (split.startedWithThinking && split.complete) {
                 hybridThinkingContent = split.thinkingContent;
                 pushToStreamer(split.remainder);
+            } else if (split.startedWithThinking && !split.complete) {
+                // ★ thinking 未闭合（输出被截断在 thinking 阶段）
+                // 提取部分 thinking 内容，不 push 到正文流，避免泄漏
+                hybridThinkingContent = split.thinkingContent;
+                // remainder 为空，不 push 任何正文内容
             } else {
                 pushToStreamer(hybridLeadingBuffer);
             }
@@ -1366,9 +1402,11 @@ async function handleStream(res: Response, cursorReq: CursorChatRequest, body: A
 
 Continue EXACTLY from where you stopped. DO NOT repeat any content already generated. DO NOT restart the response. Output ONLY the remaining content, starting immediately from the cut-off point.`;
 
-            const assistantContext = fullResponse.length > 2000
-                ? '...\n' + fullResponse.slice(-2000)
-                : fullResponse;
+            const assistantContext = closeUnclosedThinking(
+                fullResponse.length > 2000
+                    ? '...\n' + fullResponse.slice(-2000)
+                    : fullResponse,
+            );
 
             activeCursorReq = {
                 ...activeCursorReq,
@@ -1822,7 +1860,7 @@ Continue EXACTLY from where you stopped. DO NOT repeat any content already gener
             messages: [
                 // ★ 续写优化：丢弃所有工具定义和历史消息
                 {
-                    parts: [{ type: 'text', text: fullText.length > 2000 ? '...\n' + fullText.slice(-2000) : fullText }],
+                    parts: [{ type: 'text', text: closeUnclosedThinking(fullText.length > 2000 ? '...\n' + fullText.slice(-2000) : fullText) }],
                     id: uuidv4(),
                     role: 'assistant',
                 },

@@ -98,10 +98,14 @@ export function splitLeadingThinkingBlocks(text: string): LeadingThinkingSplit {
     while (cursor.startsWith(THINKING_OPEN)) {
         const closeIndex = cursor.indexOf(THINKING_CLOSE, THINKING_OPEN.length);
         if (closeIndex === -1) {
+            // ★ 未闭合（截断）：返回截断前已积累的部分 thinking 内容
+            // 当前未闭合块的内容 + 前面已完整的块（如有多个连续 thinking 块的情况）
+            const partialContent = cursor.slice(THINKING_OPEN.length).trim();
+            const allParts = [...thinkingParts, ...(partialContent ? [partialContent] : [])];
             return {
                 startedWithThinking: true,
                 complete: false,
-                thinkingContent: '',
+                thinkingContent: allParts.join('\n\n'),
                 remainder: '',
             };
         }

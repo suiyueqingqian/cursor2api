@@ -892,6 +892,11 @@ async function handleOpenAIStream(
             if (split.startedWithThinking && split.complete) {
                 hybridThinkingContent = split.thinkingContent;
                 pushToStreamer(split.remainder);
+            } else if (split.startedWithThinking && !split.complete) {
+                // ★ thinking 未闭合（输出被截断在 thinking 阶段）
+                // 提取部分 thinking 内容，不 push 到正文流，避免泄漏
+                hybridThinkingContent = split.thinkingContent;
+                // remainder 为空，不 push 任何正文内容
             } else {
                 pushToStreamer(hybridLeadingBuffer);
             }

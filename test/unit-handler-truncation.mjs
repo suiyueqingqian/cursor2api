@@ -61,13 +61,26 @@ test('大参数写入工具仍然继续续写', () => {
     );
 });
 
-test('无工具代码块但文本明显截断时继续续写', () => {
+test('普通代码块截断但文本过短（<200字）不续写', () => {
+    // 200-char 保护：非 json action 块截断时，过短的响应缺乏上下文，不触发续写
     const text = '```ts\nexport const answer = {';
 
     assertEqual(
         shouldAutoContinueTruncatedToolResponse(text, true),
+        false,
+        '非 json action 块且文本 <200 chars 时不应续写',
+    );
+});
+
+test('json action 块未闭合且文本过短时仍触发续写（thinking 剥离后场景）', () => {
+    // 场景：thinking 剥离后 fullResponse 只剩 json action 块开头（很短）
+    // 200-char 保护不应阻止这种明确的工具调用截断
+    const text = '```json action\n{\n  "tool": "Write",';
+
+    assertEqual(
+        shouldAutoContinueTruncatedToolResponse(text, true),
         true,
-        '未形成可恢复工具调用时应继续续写',
+        'json action 块未闭合时即使文本 <200 chars 也应续写',
     );
 });
 
