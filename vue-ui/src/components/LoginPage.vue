@@ -41,7 +41,7 @@ async function submit() {
   loading.value = true;
   error.value = '';
   try {
-    const res = await fetch('/api/stats', { headers: { Authorization: `Bearer ${t}` } });
+    const res = await fetch('/api/vue/stats', { headers: { Authorization: `Bearer ${t}` } });
     if (res.status === 401) {
       auth.clearToken();
       error.value = 'Token 无效，请检查后重试';

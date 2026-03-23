@@ -30,8 +30,9 @@ export function fetchRequests(limit = 50): Promise<RequestSummary[]> {
   return apiFetch<RequestSummary[]>(`/api/requests?limit=${limit}`);
 }
 
-export function fetchStats(): Promise<Stats> {
-  return apiFetch<Stats>('/api/stats');
+export function fetchStats(since?: number): Promise<Stats> {
+  const qs = since !== undefined ? `?since=${since}` : '';
+  return apiFetch<Stats>(`/api/vue/stats${qs}`);
 }
 
 export function fetchPayload(requestId: string): Promise<Payload> {

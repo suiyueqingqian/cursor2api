@@ -37,8 +37,8 @@
             <Group title="功能">
               <Field label="thinking.enabled" desc="最高优先级。跟随客户端 = 不干预（推荐）；强制关闭 = 即使客户端请求也不启用；强制开启 = 即使客户端未请求也注入">
                 <SegSelect
-                  :modelValue="draft.thinking === null ? 'auto' : draft.thinking.enabled ? 'on' : 'off'"
-                  @update:modelValue="v => draft.thinking = v === 'auto' ? null : { enabled: v === 'on' }"
+                  :modelValue="draft!.thinking === null ? 'auto' : draft!.thinking.enabled ? 'on' : 'off'"
+                  @update:modelValue="v => draft!.thinking = v === 'auto' ? null : { enabled: v === 'on' }"
                   :options="[
                     { value: 'auto', label: '跟随客户端' },
                     { value: 'off', label: '强制关闭' },

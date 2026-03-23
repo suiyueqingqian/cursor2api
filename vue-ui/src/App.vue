@@ -51,7 +51,7 @@ onMounted(async () => {
     history.replaceState(null, '', location.pathname);
   }
   try {
-    const res = await fetch('/api/stats', {
+    const res = await fetch('/api/vue/stats', {
       headers: auth.token ? { Authorization: `Bearer ${auth.token}` } : {},
     });
     if (res.ok) {

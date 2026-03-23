@@ -13,8 +13,8 @@ export const useStatsStore = defineStore('stats', () => {
     avgTTFT: 0,
   });
 
-  async function load() {
-    try { stats.value = await fetchStats(); } catch { /* ignore */ }
+  async function load(since?: number) {
+    try { stats.value = await fetchStats(since); } catch { /* ignore */ }
   }
 
   function update(data: Stats) {

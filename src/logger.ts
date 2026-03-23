@@ -17,7 +17,7 @@ import { EventEmitter } from 'events';
 import { existsSync, mkdirSync, appendFileSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'fs';
 import { join, basename } from 'path';
 import { getConfig, onConfigReload } from './config.js';
-import { initDb, closeDb, isDbInitialized, dbInsertRequest, dbGetPayload, dbGetSummaries, dbCountSummaries, dbGetSummaryCount, dbGetStatusCounts, dbGetSummariesSince, dbClear } from './logger-db.js';
+import { initDb, closeDb, isDbInitialized, dbInsertRequest, dbGetPayload, dbGetSummaries, dbCountSummaries, dbGetSummaryCount, dbGetStatusCounts, dbGetSummariesSince, dbClear, dbGetStats } from './logger-db.js';
 
 // ==================== 类型定义 ====================
 
@@ -703,6 +703,19 @@ export function getStats() {
         avgTTFT: ttftCount > 0 ? Math.round(totalTTFT / ttftCount) : 0,
         totalLogEntries: logEntries.length,
     };
+}
+
+export function getVueStats(since?: number) {
+    const cfg = getConfig();
+    if (cfg.logging?.db_enabled) {
+        try {
+            return { ...dbGetStats(since), totalLogEntries: logEntries.length };
+        } catch (e) {
+            console.warn('[Logger] dbGetStats 失败，降级到内存:', e);
+        }
+    }
+    // 内存模式：since 参数忽略，数据本就有限，直接复用 getStats()
+    return getStats();
 }
 
 // ==================== 核心 API ====================

@@ -167,6 +167,51 @@ export function dbGetSummariesSince(cutoffTimestamp: number): DbRequestSummary[]
     }).filter((s): s is DbRequestSummary => s !== null);
 }
 
+/**
+ * 聚合统计：通过 SQL 一次查询返回全量（或指定时间范围内）的 stats。
+ * 仅在 db_enabled 时调用。
+ */
+export function dbGetStats(since?: number): {
+    totalRequests: number;
+    successCount: number;
+    degradedCount: number;
+    errorCount: number;
+    interceptedCount: number;
+    processingCount: number;
+    avgResponseTime: number;
+    avgTTFT: number;
+} {
+    const where = since !== undefined ? 'WHERE timestamp >= ?' : '';
+    const params = since !== undefined ? [since] : [];
+    const row = getDb().prepare(`
+        SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN json_extract(summary_json,'$.status')='success'     THEN 1 ELSE 0 END) as success,
+            SUM(CASE WHEN json_extract(summary_json,'$.status')='degraded'    THEN 1 ELSE 0 END) as degraded,
+            SUM(CASE WHEN json_extract(summary_json,'$.status')='error'       THEN 1 ELSE 0 END) as error,
+            SUM(CASE WHEN json_extract(summary_json,'$.status')='intercepted' THEN 1 ELSE 0 END) as intercepted,
+            SUM(CASE WHEN json_extract(summary_json,'$.status')='processing'  THEN 1 ELSE 0 END) as processing,
+            AVG(CASE WHEN json_extract(summary_json,'$.endTime') IS NOT NULL
+                THEN json_extract(summary_json,'$.endTime') - timestamp END) as avgTime,
+            AVG(CASE WHEN json_extract(summary_json,'$.ttft') IS NOT NULL
+                THEN json_extract(summary_json,'$.ttft') END) as avgTTFT
+        FROM requests ${where}
+    `).get(...params) as {
+        total: number; success: number; degraded: number; error: number;
+        intercepted: number; processing: number; avgTime: number | null; avgTTFT: number | null;
+    };
+    return {
+        totalRequests:    row.total      ?? 0,
+        successCount:     row.success    ?? 0,
+        degradedCount:    row.degraded   ?? 0,
+        errorCount:       row.error      ?? 0,
+        interceptedCount: row.intercepted ?? 0,
+        processingCount:  row.processing  ?? 0,
+        avgResponseTime:  row.avgTime != null ? Math.round(row.avgTime) : 0,
+        avgTTFT:          row.avgTTFT != null ? Math.round(row.avgTTFT) : 0,
+    };
+}
+
 // ==================== 清空 ====================
 
 export function dbClear(): void {

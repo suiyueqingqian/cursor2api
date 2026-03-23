@@ -2,7 +2,7 @@ import { onUnmounted } from 'vue';
 import { createSSEConnection } from '../api';
 import { useLogsStore } from '../stores/logs';
 import { useStatsStore } from '../stores/stats';
-import type { LogEntry, RequestSummary, Stats } from '../types';
+import type { LogEntry, RequestSummary } from '../types';
 
 export function useSSE(onConnected?: (connected: boolean) => void) {
   const logsStore = useLogsStore();
@@ -18,7 +18,7 @@ export function useSSE(onConnected?: (connected: boolean) => void) {
       } else if (event === 'summary') {
         logsStore.upsertRequest(data as RequestSummary);
       } else if (event === 'stats') {
-        statsStore.update(data as Stats);
+        statsStore.load();
       }
     });
 

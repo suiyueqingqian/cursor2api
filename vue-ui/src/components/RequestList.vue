@@ -11,6 +11,13 @@
         />
         <button v-if="logsStore.search" class="si-clear" @click="logsStore.search = ''">✕</button>
       </div>
+      <button
+        v-if="logsStore.curRequestId"
+        class="follow-btn"
+        :class="{ active: logsStore.autoFollow }"
+        @click="toggleAutoFollow"
+        title="开启后自动跟随并选中最新请求"
+      >⚡ 自动跟随</button>
     </div>
     <!-- 时间筛选 -->
     <div class="tbar">
@@ -19,6 +26,7 @@
         :key="t.value"
         class="tb"
         :class="{ a: logsStore.timeFilter === t.value }"
+        :title="t.title"
         @click="logsStore.timeFilter = t.value"
       >{{ t.label }}</button>
     </div>
@@ -28,10 +36,13 @@
         v-for="f in statusTabs"
         :key="f.value"
         class="fb"
-        :class="{ a: logsStore.statusFilter === f.value }"
+        :class="[{ a: logsStore.statusFilter === f.value }, f.value]"
+        :title="f.title"
         @click="logsStore.statusFilter = f.value"
       >
-        {{ f.label }}<span class="fc">{{ counts[f.value] }}</span>
+        <span v-if="f.icon" class="fic">{{ f.icon }}</span>
+        <span v-else class="fall-label">全部</span>
+        <span v-if="f.value !== 'all'" class="fc">{{ counts[f.value] }}</span>
       </button>
     </div>
     <!-- 请求列表 -->
@@ -52,26 +63,26 @@
           <span class="ri-title-text">{{ req.title || shortModel(req.model) }}</span>
         </div>
         <div class="ri-time">
-          <span v-if="req.endTime" class="dur"> 耗时 {{ fmtMs(req.endTime - req.startTime) }}</span>
-          <span v-if="req.ttft" class="ttft"> ⚡️{{ fmtMs(req.ttft) }}</span>
+          <span v-if="req.endTime" class="dur" title="总响应耗时"> 耗时 {{ fmtMs(req.endTime - req.startTime) }}</span>
+          <span v-if="req.ttft" class="ttft" title="首 Token 时间（Time To First Token）"> ⚡️{{ fmtMs(req.ttft) }}</span>
           <span class="date">{{ fmtDate(req.startTime) }}</span>
         </div>
         <div class="r1">
-          <span class="rid">{{ req.requestId.slice(0, 8) }}</span>
-          <span class="rfmt" :class="req.apiFormat">{{ req.apiFormat }}</span>
-          <span v-if="req.responseChars" class="rchars">{{ fmtN(req.responseChars) }} chars</span>
-          <span v-if="req.inputTokens" class="rchars">↑{{ fmtN(req.inputTokens) }}↓{{ fmtN(req.outputTokens ?? 0) }} tok</span>
+          <span class="rid" title="请求 ID">{{ req.requestId.slice(0, 8) }}</span>
+          <span class="rfmt" :class="req.apiFormat" :title="'API 格式：' + req.apiFormat">{{ req.apiFormat }}</span>
+          <span v-if="req.responseChars" class="rchars" title="响应字符数">{{ fmtN(req.responseChars) }} chars</span>
+          <span v-if="req.inputTokens" class="rchars" :title="'输入 Token：' + req.inputTokens + '，输出 Token：' + (req.outputTokens ?? 0)">↑{{ fmtN(req.inputTokens) }}↓{{ fmtN(req.outputTokens ?? 0) }} tok</span>
         </div>
         <div class="rbd">
-          <span v-if="req.stream" class="bg bg-stream">Stream</span>
-          <span v-if="req.toolCount > 0" class="bg bg-tool">T:{{ req.toolCount }}</span>
-          <span v-if="req.toolCallsDetected > 0" class="bg bg-call">C:{{ req.toolCallsDetected }}</span>
-          <span v-if="req.retryCount > 0" class="bg bg-retry">R:{{ req.retryCount }}</span>
-          <span v-if="req.continuationCount > 0" class="bg bg-cont">+{{ req.continuationCount }}</span>
-          <span v-if="req.thinkingChars > 0" class="bg bg-think">🤔 {{ fmtN(req.thinkingChars) }} chars</span>
-          <span v-if="req.status === 'degraded'" class="bg bg-deg">DEGRADED</span>
-          <span v-if="req.status === 'error'" class="bg bg-err">ERR</span>
-          <span v-if="req.status === 'intercepted'" class="bg bg-int">INTERCEPT</span>
+          <span v-if="req.stream" class="bg bg-stream" title="流式响应">Stream</span>
+          <span v-if="req.toolCount > 0" class="bg bg-tool" :title="'工具定义数：' + req.toolCount">T:{{ req.toolCount }}</span>
+          <span v-if="req.toolCallsDetected > 0" class="bg bg-call" :title="'工具调用次数：' + req.toolCallsDetected">C:{{ req.toolCallsDetected }}</span>
+          <span v-if="req.retryCount > 0" class="bg bg-retry" :title="'重试次数：' + req.retryCount">R:{{ req.retryCount }}</span>
+          <span v-if="req.continuationCount > 0" class="bg bg-cont" :title="'续写次数：' + req.continuationCount">+{{ req.continuationCount }}</span>
+          <span v-if="req.thinkingChars > 0" class="bg bg-think" :title="'思考内容字符数：' + req.thinkingChars">🤔 {{ fmtN(req.thinkingChars) }} chars</span>
+          <span v-if="req.status === 'degraded'" class="bg bg-deg" title="请求降级（发生重试但最终成功）">DEGRADED</span>
+          <span v-if="req.status === 'error'" class="bg bg-err" title="请求失败">ERR</span>
+          <span v-if="req.status === 'intercepted'" class="bg bg-int" title="请求被拦截或中断">INTERCEPT</span>
         </div>
         <div class="rdbar-bg"><div class="rdbar" :style="durStyle(req)" /></div>
         <div v-if="req.error" class="rerr">{{ req.error }}</div>
@@ -87,7 +98,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, nextTick, onMounted, onUnmounted } from 'vue';
+import { computed, ref, nextTick, onMounted, onUnmounted, watch } from 'vue';
 import { useLogsStore } from '../stores/logs';
 
 const searchInput = ref<HTMLInputElement | null>(null);
@@ -125,21 +136,29 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown); });
 
 const logsStore = useLogsStore();
 
+watch(() => logsStore.autoFollowTriggered, (v) => {
+  if (v) {
+    nextTick(() => { rlistEl.value?.scrollTo({ top: 0, behavior: 'smooth' }); });
+  }
+});
+
 const timeTabs = [
-  { value: 'all' as const,   label: '全部' },
-  { value: 'today' as const, label: '今天' },
-  { value: '2d' as const,    label: '两天' },
-  { value: '7d' as const,    label: '一周' },
-  { value: '30d' as const,   label: '一月' },
+  { value: 'all' as const,   label: '全部',  title: '显示全部历史请求' },
+  { value: '1h' as const,   label: '1小时', title: '最近 1 小时的请求' },
+  { value: '6h' as const,   label: '6小时', title: '最近 6 小时的请求' },
+  { value: 'today' as const, label: '今天', title: '今天 0 点至今的请求' },
+  { value: '2d' as const,    label: '两天', title: '最近 2 天的请求' },
+  { value: '7d' as const,    label: '一周', title: '最近 7 天的请求' },
+  { value: '30d' as const,   label: '一月', title: '最近 30 天的请求' },
 ];
 
 const statusTabs = [
-  { value: 'all' as const,         label: '全部' },
-  { value: 'success' as const,     label: '成功' },
-  { value: 'degraded' as const,    label: '降级' },
-  { value: 'error' as const,       label: '错误' },
-  { value: 'processing' as const,  label: '处理中' },
-  { value: 'intercepted' as const, label: '中断' },
+  { value: 'all' as const,         icon: '',   label: '全部',  title: '显示全部请求' },
+  { value: 'success' as const,     icon: '✅',  label: '成功',  title: '成功完成的请求' },
+  { value: 'degraded' as const,    icon: '⚠️', label: '降级',  title: '降级请求（重试后成功）' },
+  { value: 'error' as const,       icon: '❌',  label: '错误',  title: '失败请求' },
+  { value: 'processing' as const,  icon: '⏳',  label: '处理中', title: '正在处理的请求' },
+  { value: 'intercepted' as const, icon: '🚫',  label: '中断',  title: '被拦截/中断的请求' },
 ];
 
 const counts = computed(() => logsStore.statusCounts);
@@ -192,6 +211,14 @@ function selectReq(id: string) {
     logsStore.selectRequest(id);
   }
 }
+
+function toggleAutoFollow() {
+  logsStore.autoFollow = !logsStore.autoFollow;
+  if (logsStore.autoFollow && logsStore.filteredReqs.length) {
+    logsStore.selectRequest(logsStore.filteredReqs[0].requestId);
+    nextTick(() => { rlistEl.value?.scrollTo({ top: 0, behavior: 'smooth' }); });
+  }
+}
 </script>
 
 <style scoped>
@@ -200,11 +227,12 @@ function selectReq(id: string) {
   display: flex; flex-direction: column;
   border-right: 1px solid var(--border);
   background: var(--bg1);
+  isolation: isolate;
 }
 [data-theme="dark"] .request-list { background: rgba(22,27,39,.75); }
 
-.search { padding: 8px 10px; border-bottom: 1px solid var(--border); }
-.sw { position: relative; }
+.search { padding: 8px 10px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 6px; }
+.sw { position: relative; flex: 1; }
 .sw::before { content: '🔍'; position: absolute; left: 9px; top: 50%; transform: translateY(-50%); font-size: 11px; pointer-events: none; }
 .si {
   width: 100%; padding: 6px 28px 6px 28px; font-size: 12px;
@@ -221,6 +249,13 @@ function selectReq(id: string) {
   line-height: 1; display: flex; align-items: center;
 }
 .si-clear:hover { color: var(--text); }
+.follow-btn {
+  padding: 4px 8px; font-size: 10px; font-weight: 500; white-space: nowrap; flex-shrink: 0;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 20px;
+  color: var(--text-muted); cursor: pointer; transition: all .15s;
+}
+.follow-btn:hover { border-color: var(--yellow); color: var(--yellow); }
+.follow-btn.active { background: color-mix(in srgb, var(--yellow) 15%, transparent); border-color: var(--yellow); color: var(--yellow); font-weight: 600; }
 
 .tbar { padding: 5px 8px; border-bottom: 1px solid var(--border); display: flex; gap: 3px; flex-wrap: wrap; }
 .tb {
@@ -234,15 +269,22 @@ function selectReq(id: string) {
 
 .fbar { padding: 5px 8px; border-bottom: 1px solid var(--border); display: flex; gap: 3px; flex-wrap: wrap; }
 .fb {
-  padding: 3px 9px; font-size: 10px; font-weight: 500;
+  padding: 3px 8px; font-size: 10px; font-weight: 500;
   border: 1px solid var(--border); border-radius: 20px;
   background: var(--bg); color: var(--text-muted);
   cursor: pointer; transition: all .15s;
-  display: flex; align-items: center; gap: 3px;
+  display: flex; align-items: center; gap: 4px;
 }
 .fb:hover { border-color: var(--blue); color: var(--blue); }
 .fb.a { background: linear-gradient(135deg,#3b82f6,#6366f1); border-color: transparent; color: #fff; }
-.fc { font-size: 9px; font-weight: 700; padding: 0 4px; border-radius: 8px; background: rgba(255,255,255,.2); }
+.fb.a.success { background: none; border-color: var(--green); color: var(--green); }
+.fb.a.degraded { background: none; border-color: var(--orange); color: var(--orange); }
+.fb.a.error { background: none; border-color: var(--red); color: var(--red); }
+.fb.a.processing { background: none; border-color: var(--yellow); color: var(--yellow); }
+.fb.a.intercepted { background: none; border-color: var(--pink); color: var(--pink); }
+.fic { font-size: 12px; line-height: 1; }
+.fall-label { font-size: 10px; }
+.fc { font-size: 9px; font-weight: 700; padding: 0 4px; border-radius: 8px; background: rgba(255,255,255,.15); }
 .fb:not(.a) .fc { background: var(--pill-bg); color: var(--text-muted); }
 
 .rlist { overflow-y: auto; flex: 1; padding: 4px 0; }
@@ -310,7 +352,7 @@ function selectReq(id: string) {
 }
 .rfmt.anthropic { background: #7c3aed22; color: #a78bfa; }
 .rfmt.openai { background: #05966922; color: #34d399; }
-.rfmt.responses { background: #0ea5e9 22; color: #38bdf8; }
+.rfmt.responses { background: #0ea5e922; color: #38bdf8; }
 .rchars { font-size: 10px; font-family: var(--mono); color: var(--text-muted); margin-left: auto; }
 
 /* badges 行 */

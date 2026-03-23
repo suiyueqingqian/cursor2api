@@ -8,7 +8,7 @@ import type { Request, Response } from 'express';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { getAllLogs, getRequestSummaries, getStats, getRequestPayload, subscribeToLogs, subscribeToSummaries, clearAllLogs, getRequestSummariesPage } from './logger.js';
+import { getAllLogs, getRequestSummaries, getStats, getVueStats, getRequestPayload, subscribeToLogs, subscribeToSummaries, clearAllLogs, getRequestSummariesPage } from './logger.js';
 
 // ==================== 静态文件路径 ====================
 
@@ -35,8 +35,13 @@ export function apiGetRequests(req: Request, res: Response): void {
     res.json(getRequestSummaries(req.query.limit ? parseInt(req.query.limit as string) : 50));
 }
 
-export function apiGetStats(_req: Request, res: Response): void {
+export function apiGetStats(req: Request, res: Response): void {
     res.json(getStats());
+}
+
+export function apiGetVueStats(req: Request, res: Response): void {
+    const since = req.query.since ? parseInt(req.query.since as string) : undefined;
+    res.json(getVueStats(since));
 }
 
 /** GET /api/payload/:requestId - 获取请求的完整参数和响应 */

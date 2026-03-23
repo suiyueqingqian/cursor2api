@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue';
 import type { LogEntry, RequestSummary, Payload } from '../types';
 import { fetchRequests, fetchLogs, fetchPayload, clearLogs, fetchMoreRequests } from '../api';
 import type { RequestsFilter } from '../api';
+import { useStatsStore } from './stats';
 
 export const useLogsStore = defineStore('logs', () => {
   const reqs = ref<RequestSummary[]>([]);
@@ -17,7 +18,9 @@ export const useLogsStore = defineStore('logs', () => {
 
   const search = ref('');
   const statusFilter = ref<'all' | 'success' | 'degraded' | 'error' | 'processing' | 'intercepted'>('all');
-  const timeFilter = ref<'all' | 'today' | '2d' | '7d' | '30d'>('all');
+  const timeFilter = ref<'all' | '1h' | '6h' | 'today' | '2d' | '7d' | '30d'>('all');
+  const autoFollow = ref(false);
+  const autoFollowTriggered = ref(false);
 
   function getTimeCutoff(): number {
     if (timeFilter.value === 'all') return 0;
@@ -25,7 +28,7 @@ export const useLogsStore = defineStore('logs', () => {
     if (timeFilter.value === 'today') {
       const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime();
     }
-    const map: Record<string, number> = { '2d': 2, '7d': 7, '30d': 30 };
+    const map: Record<string, number> = { '1h': 1/24, '6h': 6/24, '2d': 2, '7d': 7, '30d': 30 };
     return now - (map[timeFilter.value] ?? 0) * 86400000;
   }
 
@@ -90,6 +93,8 @@ export const useLogsStore = defineStore('logs', () => {
   // 状态/时间过滤：点击立即触发
   watch([statusFilter, timeFilter], () => {
     resetAndLoad();
+    const cutoff = getTimeCutoff();
+    useStatsStore().load(cutoff > 0 ? cutoff : undefined);
   });
 
   // 搜索框：400ms 防抖
@@ -137,13 +142,18 @@ export const useLogsStore = defineStore('logs', () => {
         if (oldStatus && statusCounts.value[oldStatus]) statusCounts.value[oldStatus]--;
         if (summary.status) statusCounts.value[summary.status] = (statusCounts.value[summary.status] ?? 0) + 1;
       }
-      reqs.value[idx] = summary;
+      Object.assign(reqs.value[idx], summary);
     } else {
       // 新请求：递增计数
       statusCounts.value.all = (statusCounts.value.all ?? 0) + 1;
       if (summary.status) statusCounts.value[summary.status] = (statusCounts.value[summary.status] ?? 0) + 1;
       total.value++;
       reqs.value.unshift(summary);
+      // 自动跟随：已有选中记录时自动切换到最新
+      if (autoFollow.value && curRequestId.value !== null) {
+        autoFollowTriggered.value = true;
+        selectRequest(summary.requestId).finally(() => { autoFollowTriggered.value = false; });
+      }
     }
   }
 
@@ -167,7 +177,7 @@ export const useLogsStore = defineStore('logs', () => {
 
   return {
     reqs, curLogs, globalLogs, displayLogs, curRequestId, payload,
-    search, statusFilter, timeFilter, filteredReqs,
+    search, statusFilter, timeFilter, autoFollow, autoFollowTriggered, filteredReqs,
     hasMore, loadingMore, total, statusCounts,
     loadRequests, loadMoreRequests, selectRequest, deselect, addLog, upsertRequest, clear, resetState,
   };
