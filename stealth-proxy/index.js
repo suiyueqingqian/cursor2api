@@ -17,7 +17,7 @@ const crypto = require('crypto');
 const PORT = parseInt(process.env.PORT || '3011');
 const CHALLENGE_URL = process.env.CHALLENGE_URL || 'https://cursor.com/cn/docs';
 const REFRESH_INTERVAL = parseInt(process.env.REFRESH_INTERVAL || '3000000'); // 50 分钟
-const CHALLENGE_WAIT = parseInt(process.env.CHALLENGE_WAIT || '15000'); // challenge 最长等待时间
+const CHALLENGE_WAIT = parseInt(process.env.CHALLENGE_WAIT || '30000'); // challenge 最长等待时间
 
 let browser, context, challengePage, workerPage;
 let ready = false;
@@ -61,13 +61,20 @@ async function initBrowser() {
     challengePage = await context.newPage();
     console.log(`[Stealth] Passing Vercel challenge: ${CHALLENGE_URL}`);
     await challengePage.goto(CHALLENGE_URL, {
-        waitUntil: 'networkidle',
-        timeout: 30000,
+        waitUntil: 'domcontentloaded',
+        timeout: 60000,
     });
 
+    // 等待 cookie（challenge JS 会异步设置 _vcrcs）
     const ok = await waitForCookie();
     if (!ok) {
-        throw new Error('Failed to obtain _vcrcs cookie');
+        // 重试一次：刷新页面再等
+        console.log('[Stealth] First attempt failed, retrying challenge...');
+        await challengePage.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
+        const retryOk = await waitForCookie();
+        if (!retryOk) {
+            throw new Error('Failed to obtain _vcrcs cookie after retry');
+        }
     }
     challengeCount++;
 
